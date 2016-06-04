@@ -39,12 +39,13 @@ Check the script swarm-multihost.sh in the folder sf
 
 docker-compose up in the sf folder.
 
-check where they are deployed. Issue : nginx proxy, how to make it work on a swarm?
+check where they are deployed.
 
 Adding docker volumes to keep data between deletions
 
 Putting labels ?
 
+jenkins does not work with the proxy
 
 ### Start DOcker daemon listening to outside world (unsecure)
 
