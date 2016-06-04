@@ -41,7 +41,8 @@ docker run -d -p 3376:3376 -t swarm manage -H 0.0.0.0:3376 token://a782b857dbebc
 ### Start Agent node (unsecure)
 
 ```
-docker run -d swarm join --addr=<agent_ip>:2376 token://a782b857dbebc08ece5033926
+docker run -d swarm join --addr=<agent_ip>:2376 token://a782b857dbebc08ece503392671b95eb
+
 ```
 
 ### Control the manager from anywhere
