@@ -4,8 +4,7 @@ NODE1_IP="178.33.83.161"
 NODE2_IP="178.33.83.162"
 NODE3_IP="178.33.83.163"
 NODES="${NODE1_IP}
-${NODE2_IP}
-${NODE3_IP}"
+${NODE2_IP}"
 
 echo "L'apocalypse a commencé !"
 
