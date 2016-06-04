@@ -19,6 +19,19 @@
 
 ### Setting up the swarm with consul
 
+First, launch a consul cluster somewhere.
+
+Command line :
+
+    docker run -d --net=host -e 'CONSUL_LOCAL_CONFIG={"skip_leave_on_interrupt": true}' consul agent -server -bind=178.33.83.163 -client=178.33.83.163 --boostrap
+
+
+Once it is done, launch the docker daemons on the machines of the swarm with :
+
+   nohup sudo docker daemon -H unix:///var/run/docker.sock -H tcp://0.0.0.0:2376 --cluster-store consul://178.33.83.163:8500 --cluster-advertise eth1:2376 &
+
+
+
 Check the script swarm-multihost.sh in the folder sf
 
 ### Start DOcker daemon listening to outside world (unsecure)
