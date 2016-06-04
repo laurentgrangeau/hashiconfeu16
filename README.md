@@ -28,11 +28,23 @@ Command line :
 
 Once it is done, launch the docker daemons on the machines of the swarm with :
 
-   nohup sudo docker daemon -H unix:///var/run/docker.sock -H tcp://0.0.0.0:2376 --cluster-store consul://178.33.83.163:8500 --cluster-advertise eth1:2376 &
+   nohup sudo docker daemon -H unix:///var/run/docker.sock -H tcp://0.0.0.0:2376 --cluster-store consul://178.33.83.163:8500 --cluster-advertise eth1:2376 --label==front &
 
+   nohup sudo docker daemon -H unix:///var/run/docker.sock -H tcp://0.0.0.0:2376 --cluster-store consul://178.33.83.163:8500 --cluster-advertise eth1:2376 --label==back &
 
 
 Check the script swarm-multihost.sh in the folder sf
+
+### Starting the SF
+
+docker-compose up in the sf folder.
+
+check where they are deployed. Issue : nginx proxy, how to make it work on a swarm?
+
+Adding docker volumes to keep data between deletions
+
+Putting labels ?
+
 
 ### Start DOcker daemon listening to outside world (unsecure)
 

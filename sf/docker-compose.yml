@@ -1,0 +1,32 @@
+version: '2'
+services:
+#  nginx-proxy:
+#    image: jwilder/nginx-proxy
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#    env_file:
+#      - proxy.env
+#    volumes:
+#      - "/var/run/docker.sock:/tmp/docker.sock:ro"
+  gitlab:
+    image: gitlab/gitlab-ce:latest 
+    restart: "always"
+    env_file:
+      - gitlab.env
+    ports:
+      - "443:443"
+      - "80:80"
+  jenkins:
+    image: jenkins
+    env_file:
+      - jenkins.env
+    ports:
+      - "8443:8443"
+      - "8080:8080"
+  artifactory:
+    image: jfrog-docker-reg2.bintray.io/jfrog/artifactory-registry:latest
+    ports:
+      - "4443:443"
+      - "4080:80"
+      - "8081:8081"
