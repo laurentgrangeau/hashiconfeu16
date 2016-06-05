@@ -1,0 +1,8 @@
+icon-shim:2.0.2
+scm-api:1.0
+credentials:1.24
+plain-credentials:1.1
+git-client:1.19.0
+git:2.4.1
+workflow-step-api:1.15
+gitlab-plugin:1.2.3
