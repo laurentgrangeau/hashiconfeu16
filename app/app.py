@@ -5,9 +5,9 @@ app = Flask(__name__)
 redis = Redis(host='redis', port=6379)
 
 @app.route('/')
-def ping():
-	redis.incr('hits')
-	return '%s ping received. About as much pong returned.' % redis.get('hits')
+def hello():
+    redis.incr('hits')
+    return 'Hello World! I have been hit %s times !' % redis.get('hits')
 
 if __name__ == "__main__":
-	app.run(host="0.0.0.0", debug=True)
+    app.run(host='0.0.0.0', debug=True)
