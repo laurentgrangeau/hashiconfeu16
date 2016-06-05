@@ -50,3 +50,16 @@ Activate the Gitlab plugin, by putting all the hpi files in the folder
 /var/jenkins_home/plugins
 
 Create a job freestyle. That builds each time anything happens to the repository
+
+
+## Application
+
+An application that gather datas from a POSTGRE database.
+
+First, data is retrieved via hardcoded credentaisl, and then credentials from Vault are used.
+
+After, communication with the service is done with TLS, again from Vault.
+
+At each step, a push is done on a Gitlab repo. After each push, a jenkins job is automatically triggered, creating a docker image and pushing it to Artifactory.
+
+One on Artifactory, another job is launched, doing a docker-compose up and running integration tests. Once it is ok, docker-compose down, and the image is promoted to production.
