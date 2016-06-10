@@ -4,3 +4,10 @@ services:
     build: ./minitwit
     ports:
       - "5000:5000"
+    depends_on:
+      - vault
+  vault: 
+    build: ./vault
+    ports:
+      - "8200:8200"
+    command: server -config=/config/dev.hcl
