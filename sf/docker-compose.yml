@@ -17,4 +17,6 @@ services:
   vault:
     build: ./vault
     command: server -config=/config/dev.hcl
+    ports:
+      - "8200:8200"
 
