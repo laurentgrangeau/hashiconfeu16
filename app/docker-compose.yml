@@ -15,3 +15,5 @@ services:
     environment:
       - POSTGRES_PASSWORD=toto
     command: postgres
+    ports:
+      - "5432:5432"

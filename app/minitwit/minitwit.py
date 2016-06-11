@@ -32,6 +32,11 @@ app = Flask(__name__)
 app.config.from_object(__name__)
 app.config.from_envvar('MINITWIT_SETTINGS', silent=True)
 
+USERNAME = 'username'
+EMAIL = 'email'
+PW_HASH = 'pw_hash'
+ID = 'user_id'
+
 
 def get_db():
     """Opens a new database connection if there is none yet for the
@@ -43,8 +48,12 @@ def get_db():
             top.postgre_db = psycopg2.connect(host=app.config['HOST'], database=app.config['DATABASE'],
                                               user=app.config['USER'], password=app.config['PASSWORD'],
                                               port=app.config['PORT'])
-        except psycopg2.OperationalError:
-            print('Could not connect to the db {} on host {}:{}, retrying in 1 second'.format(app.config['DATABASE'], app.config['HOST'], app.config['PORT']))
+            initdb_command()
+        except Exception as e:
+            app.logger.error('Could not connect to the db {} on host {}:{} : {}'.format(app.config['DATABASE'],
+                                                                                        app.config['HOST'],
+                                                                                        app.config['PORT'],
+                                                                                        str(e)))
             time.sleep(1)
     return top.postgre_db
 
@@ -59,31 +68,37 @@ def close_database(exception):
 
 def init_db():
     """Initializes the database."""
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+    with get_db() as db:
+        with db.cursor() as cur:
+            with app.open_resource('schema.sql', mode='r') as f:
+                cur.execute(f.read())
 
 
 def initdb_command():
     """Creates the database tables."""
     init_db()
-    print('Initialized the database.')
+    app.logger.info('Initialized the database.')
 
 
 def query_db(query, args=(), one=False):
     """Queries the database and returns a list of dictionaries."""
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    return (rv[0] if rv else None) if one else rv
+    with get_db() as db:
+        with db.cursor() as cur:
+            app.logger.error('Executing query {} with args {}'.format(query, args))
+            cur.execute(query, args)
+            rv = cur.fetchall()
+            fields = [desc[0] for desc in cur.description]
+            app.logger.error(rv)
+
+    return ({colname: val for colname, val in zip(fields, rv[0])} if rv else None) if one else [
+        {colname: val for colname, val in zip(fields, vals)} for vals in rv]
 
 
 def get_user_id(username):
     """Convenience method to look up the id for a username."""
-    rv = query_db('select user_id from user where username = ?',
+    rv = query_db('SELECT user_id FROM twituser WHERE username = (%s)',
                   [username], one=True)
-    return rv[0] if rv else None
+    return rv['user_id'] if rv else None
 
 
 def format_datetime(timestamp):
@@ -101,7 +116,7 @@ def gravatar_url(email, size=80):
 def before_request():
     g.user = None
     if 'user_id' in session:
-        g.user = query_db('select * from user where user_id = ?',
+        g.user = query_db('SELECT * FROM twituser WHERE user_id = (%s)',
                           [session['user_id']], one=True)
 
 
@@ -114,43 +129,43 @@ def timeline():
     if not g.user:
         return redirect(url_for('public_timeline'))
     return render_template('timeline.html', messages=query_db('''
-        select message.*, user.* from message, user
-        where message.author_id = user.user_id and (
-            user.user_id = ? or
-            user.user_id in (select whom_id from follower
-                                    where who_id = ?))
-        order by message.pub_date desc limit ?''',
-                                                              [session['user_id'], session['user_id'], PER_PAGE]))
+        SELECT message.*, twituser.* FROM message, twituser
+        WHERE message.author_id = twituser.user_id AND (
+            twituser.user_id = (%s) OR
+            twituser.user_id IN (SELECT whom_id FROM follower
+                                    WHERE who_id = (%s)))
+        ORDER BY MESSAGE.pub_date DESC LIMIT (%s)''', [session['user_id'], session['user_id'], PER_PAGE]))
 
 
 @app.route('/public')
 def public_timeline():
     """Displays the latest messages of all users."""
     return render_template('timeline.html', messages=query_db('''
-        select message.*, user.* from message, user
-        where message.author_id = user.user_id
-        order by message.pub_date desc limit ?''', [PER_PAGE]))
+        SELECT message.*, twituser.* FROM message, twituser
+        WHERE message.author_id = twituser.user_id
+        ORDER BY message.pub_date DESC LIMIT (%s)''', [PER_PAGE]))
 
 
 @app.route('/<username>')
 def user_timeline(username):
     """Display's a users tweets."""
-    profile_user = query_db('select * from user where username = ?',
+    profile_user = query_db('SELECT * FROM twituser WHERE username = (%s)',
                             [username], one=True)
     if profile_user is None:
         abort(404)
     followed = False
     if g.user:
-        followed = query_db('''select 1 from follower where
-            follower.who_id = ? and follower.whom_id = ?''',
-                            [session['user_id'], profile_user['user_id']],
+        followed = query_db('''SELECT 1 FROM follower WHERE
+            follower.who_id = (%s) AND follower.whom_id = (%s)''',
+                            [session['user_id'], profile_user[ID]],
                             one=True) is not None
-    return render_template('timeline.html', messages=query_db('''
-            select message.*, user.* from message, user where
-            user.user_id = message.author_id and user.user_id = ?
-            order by message.pub_date desc limit ?''',
-                                                              [profile_user['user_id'], PER_PAGE]), followed=followed,
-                           profile_user=profile_user)
+    return render_template('timeline.html',
+                           messages=query_db('''
+                                SELECT message.*, twituser.* FROM message, twituser WHERE
+                                twituser.user_id = message.author_id AND twituser.user_id = (%s)
+                                ORDER BY message.pub_date DESC LIMIT (%s)''',
+                                             [profile_user[ID], PER_PAGE]),
+                           followed=followed, profile_user=profile_user)
 
 
 @app.route('/<username>/follow')
@@ -161,10 +176,10 @@ def follow_user(username):
     whom_id = get_user_id(username)
     if whom_id is None:
         abort(404)
-    db = get_db()
-    db.execute('insert into follower (who_id, whom_id) values (?, ?)',
-               [session['user_id'], whom_id])
-    db.commit()
+    with get_db() as db:
+        with db.cursor() as cur:
+            cur.execute('INSERT INTO follower (who_id, whom_id) VALUES ((%s), (%s))',
+                        [session['user_id'], whom_id])
     flash('You are now following "%s"' % username)
     return redirect(url_for('user_timeline', username=username))
 
@@ -177,10 +192,10 @@ def unfollow_user(username):
     whom_id = get_user_id(username)
     if whom_id is None:
         abort(404)
-    db = get_db()
-    db.execute('delete from follower where who_id=? and whom_id=?',
-               [session['user_id'], whom_id])
-    db.commit()
+    with get_db() as db:
+        with db.cursor() as cur:
+            cur.execute('DELETE FROM follower WHERE who_id=(%s) AND whom_id=(%s)',
+                        [session['user_id'], whom_id])
     flash('You are no longer following "%s"' % username)
     return redirect(url_for('user_timeline', username=username))
 
@@ -191,12 +206,12 @@ def add_message():
     if 'user_id' not in session:
         abort(401)
     if request.form['text']:
-        db = get_db()
-        db.execute('''insert into message (author_id, text, pub_date)
-          values (?, ?, ?)''', (session['user_id'], request.form['text'],
-                                int(time.time())))
-        db.commit()
-        flash('Your message was recorded')
+        with get_db() as db:
+            with db.cursor() as cur:
+                cur.execute('''INSERT INTO message (author_id, text, pub_date)
+                  VALUES ((%s), (%s), (%s))''', (session['user_id'], request.form['text'],
+                                                 int(time.time())))
+    flash('Your message was recorded')
     return redirect(url_for('timeline'))
 
 
@@ -207,16 +222,16 @@ def login():
         return redirect(url_for('timeline'))
     error = None
     if request.method == 'POST':
-        user = query_db('''select * from user where
-            username = ?''', [request.form['username']], one=True)
+        user = query_db('''SELECT * FROM twituser WHERE
+            username = (%s)''', [request.form['username']], one=True)
         if user is None:
             error = 'Invalid username'
-        elif not check_password_hash(user['pw_hash'],
+        elif not check_password_hash(user[PW_HASH],
                                      request.form['password']):
             error = 'Invalid password'
         else:
             flash('You were logged in')
-            session['user_id'] = user['user_id']
+            session['user_id'] = user[ID]
             return redirect(url_for('timeline'))
     return render_template('login.html', error=error)
 
@@ -240,12 +255,12 @@ def register():
         elif get_user_id(request.form['username']) is not None:
             error = 'The username is already taken'
         else:
-            db = get_db()
-            db.execute('''insert into user (
-              username, email, pw_hash) values (?, ?, ?)''',
-                       [request.form['username'], request.form['email'],
-                        generate_password_hash(request.form['password'])])
-            db.commit()
+            with get_db() as db:
+                with db.cursor() as cur:
+                    cur.execute('''INSERT INTO twituser (
+                      username, email, pw_hash) VALUES ((%s), (%s), (%s))''',
+                                [request.form['username'], request.form['email'],
+                                 generate_password_hash(request.form['password'])])
             flash('You were successfully registered and can login now')
             return redirect(url_for('login'))
     return render_template('register.html', error=error)
@@ -264,5 +279,4 @@ app.jinja_env.filters['datetimeformat'] = format_datetime
 app.jinja_env.filters['gravatar'] = gravatar_url
 
 if __name__ == "__main__":
-    initdb_command()
     app.run()

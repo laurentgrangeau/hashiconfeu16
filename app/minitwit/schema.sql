@@ -1,9 +1,13 @@
-drop table if exists user;
-create table user (
-  user_id integer primary key autoincrement,
+create table flag (
+  flag_id SERIAL PRIMARY KEY
+);
+
+drop table if exists twituser;
+create table twituser (
   username text not null,
   email text not null,
-  pw_hash text not null
+  pw_hash text not null,
+  user_id SERIAL primary key
 );
 
 drop table if exists follower;
@@ -14,8 +18,8 @@ create table follower (
 
 drop table if exists message;
 create table message (
-  message_id integer primary key autoincrement,
   author_id integer not null,
   text text not null,
-  pub_date integer
+  pub_date integer,
+  message_id serial primary key
 );
