@@ -4,11 +4,9 @@ ADD . /minitwit
 
 WORKDIR /minitwit
 
-RUN pip install -r requirements.txt
+RUN apt-get update && apt-get install -y libpq-dev gcc && pip3 install -r requirements.txt
 
-ENV FLASK_APP minitwit.py
-
-RUN flask initdb
+ENV FLASK_APP=minitwit.py LC_ALL=C.UTF-8 LANG=C.UTF-8
 
 EXPOSE 5000
 

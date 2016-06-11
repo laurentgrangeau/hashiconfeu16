@@ -10,16 +10,19 @@
 """
 
 import time
-from sqlite3 import dbapi2 as sqlite3
+import psycopg2
 from hashlib import md5
 from datetime import datetime
 from flask import Flask, request, session, url_for, redirect, \
-     render_template, abort, g, flash, _app_ctx_stack
+    render_template, abort, g, flash, _app_ctx_stack
 from werkzeug import check_password_hash, generate_password_hash
 
-
 # configuration
-DATABASE = '/tmp/minitwit.db'
+DATABASE = 'postgres'
+USER = 'postgres'
+PASSWORD = 'toto'
+HOST = 'app_db_1'
+PORT = 5432
 PER_PAGE = 30
 DEBUG = True
 SECRET_KEY = 'development key'
@@ -35,29 +38,34 @@ def get_db():
     current application context.
     """
     top = _app_ctx_stack.top
-    if not hasattr(top, 'sqlite_db'):
-        top.sqlite_db = sqlite3.connect(app.config['DATABASE'])
-        top.sqlite_db.row_factory = sqlite3.Row
-    return top.sqlite_db
+    while not hasattr(top, 'postgre_db'):
+        try:
+            top.postgre_db = psycopg2.connect(host=app.config['HOST'], database=app.config['DATABASE'],
+                                              user=app.config['USER'], password=app.config['PASSWORD'],
+                                              port=app.config['PORT'])
+        except psycopg2.OperationalError:
+            print('Could not connect to the db {} on host {}:{}, retrying in 1 second'.format(app.config['DATABASE'], app.config['HOST'], app.config['PORT']))
+            time.sleep(1)
+    return top.postgre_db
 
 
 @app.teardown_appcontext
 def close_database(exception):
     """Closes the database again at the end of the request."""
     top = _app_ctx_stack.top
-    if hasattr(top, 'sqlite_db'):
-        top.sqlite_db.close()
+    if hasattr(top, 'postgre_db'):
+        top.postgre_db.close()
 
 
 def init_db():
     """Initializes the database."""
-    db = get_db()
-    with app.open_resource('schema.sql', mode='r') as f:
-        db.cursor().executescript(f.read())
-    db.commit()
+    with app.app_context():
+        db = get_db()
+        with app.open_resource('schema.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
 
 
-@app.cli.command('initdb')
 def initdb_command():
     """Creates the database tables."""
     init_db()
@@ -86,7 +94,7 @@ def format_datetime(timestamp):
 def gravatar_url(email, size=80):
     """Return the gravatar image for the given email address."""
     return 'http://www.gravatar.com/avatar/%s?d=identicon&s=%d' % \
-        (md5(email.strip().lower().encode('utf-8')).hexdigest(), size)
+           (md5(email.strip().lower().encode('utf-8')).hexdigest(), size)
 
 
 @app.before_request
@@ -112,7 +120,7 @@ def timeline():
             user.user_id in (select whom_id from follower
                                     where who_id = ?))
         order by message.pub_date desc limit ?''',
-        [session['user_id'], session['user_id'], PER_PAGE]))
+                                                              [session['user_id'], session['user_id'], PER_PAGE]))
 
 
 @app.route('/public')
@@ -135,14 +143,14 @@ def user_timeline(username):
     if g.user:
         followed = query_db('''select 1 from follower where
             follower.who_id = ? and follower.whom_id = ?''',
-            [session['user_id'], profile_user['user_id']],
-            one=True) is not None
+                            [session['user_id'], profile_user['user_id']],
+                            one=True) is not None
     return render_template('timeline.html', messages=query_db('''
             select message.*, user.* from message, user where
             user.user_id = message.author_id and user.user_id = ?
             order by message.pub_date desc limit ?''',
-            [profile_user['user_id'], PER_PAGE]), followed=followed,
-            profile_user=profile_user)
+                                                              [profile_user['user_id'], PER_PAGE]), followed=followed,
+                           profile_user=profile_user)
 
 
 @app.route('/<username>/follow')
@@ -155,7 +163,7 @@ def follow_user(username):
         abort(404)
     db = get_db()
     db.execute('insert into follower (who_id, whom_id) values (?, ?)',
-              [session['user_id'], whom_id])
+               [session['user_id'], whom_id])
     db.commit()
     flash('You are now following "%s"' % username)
     return redirect(url_for('user_timeline', username=username))
@@ -171,7 +179,7 @@ def unfollow_user(username):
         abort(404)
     db = get_db()
     db.execute('delete from follower where who_id=? and whom_id=?',
-              [session['user_id'], whom_id])
+               [session['user_id'], whom_id])
     db.commit()
     flash('You are no longer following "%s"' % username)
     return redirect(url_for('user_timeline', username=username))
@@ -223,7 +231,7 @@ def register():
         if not request.form['username']:
             error = 'You have to enter a username'
         elif not request.form['email'] or \
-                '@' not in request.form['email']:
+                        '@' not in request.form['email']:
             error = 'You have to enter a valid email address'
         elif not request.form['password']:
             error = 'You have to enter a password'
@@ -235,8 +243,8 @@ def register():
             db = get_db()
             db.execute('''insert into user (
               username, email, pw_hash) values (?, ?, ?)''',
-              [request.form['username'], request.form['email'],
-               generate_password_hash(request.form['password'])])
+                       [request.form['username'], request.form['email'],
+                        generate_password_hash(request.form['password'])])
             db.commit()
             flash('You were successfully registered and can login now')
             return redirect(url_for('login'))
@@ -254,3 +262,7 @@ def logout():
 # add some filters to jinja
 app.jinja_env.filters['datetimeformat'] = format_datetime
 app.jinja_env.filters['gravatar'] = gravatar_url
+
+if __name__ == "__main__":
+    initdb_command()
+    app.run()

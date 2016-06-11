@@ -6,8 +6,12 @@ services:
       - "5000:5000"
     depends_on:
       - vault
+      - db
   vault: 
     build: ./vault
-    ports:
-      - "8200:8200"
     command: server -config=/config/dev.hcl
+  db:
+    image: postgres
+    environment:
+      - POSTGRES_PASSWORD=toto
+    command: postgres
