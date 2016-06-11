@@ -11,6 +11,7 @@
 
 import time
 import psycopg2
+import hvac
 from hashlib import md5
 from datetime import datetime
 from flask import Flask, request, session, url_for, redirect, \
@@ -84,11 +85,9 @@ def query_db(query, args=(), one=False):
     """Queries the database and returns a list of dictionaries."""
     with get_db() as db:
         with db.cursor() as cur:
-            app.logger.error('Executing query {} with args {}'.format(query, args))
             cur.execute(query, args)
             rv = cur.fetchall()
             fields = [desc[0] for desc in cur.description]
-            app.logger.error(rv)
 
     return ({colname: val for colname, val in zip(fields, rv[0])} if rv else None) if one else [
         {colname: val for colname, val in zip(fields, vals)} for vals in rv]

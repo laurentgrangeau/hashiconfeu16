@@ -5,11 +5,7 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      - vault
       - db
-  vault: 
-    build: ./vault
-    command: server -config=/config/dev.hcl
   db:
     image: postgres
     environment:
