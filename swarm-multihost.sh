@@ -10,6 +10,3 @@ NODE3="-H tcp://${NODE3_IP}:2376"
 docker ${NODE1} run --name swarm-manager -d -p 3376:3376 swarm manage -H tcp://0.0.0.0:3376  consul://${NODE3_IP}:8500
 docker ${NODE1} run --name swarm-slave1 -d swarm join --addr=${NODE1_IP}:2376 consul://${NODE3_IP}:8500
 docker ${NODE2} run --name swarm-slave2 -d swarm join --addr=${NODE2_IP}:2376 consul://${NODE3_IP}:8500
-
-docker ${NODE1} run --name registrator -d --net=host --volume=//var/run/docker.sock:/tmp/docker.sock gliderlabs/registrator:latest consul://${NODE3_IP}:8500
-docker ${NODE2} run --name registrator -d --net=host --volume=//var/run/docker.sock:/tmp/docker.sock gliderlabs/registrator:latest consul://${NODE3_IP}:8500
