@@ -11,22 +11,28 @@
 
 import time
 import psycopg2
+import psycopg2.extensions
 import hvac
 from hashlib import md5
 from datetime import datetime
 from flask import Flask, request, session, url_for, redirect, \
     render_template, abort, g, flash, _app_ctx_stack
 from werkzeug import check_password_hash, generate_password_hash
+from werkzeug.exceptions import BadRequest
 
 # configuration
-DATABASE = 'postgres'
-USER = 'postgres'
-PASSWORD = 'toto'
-HOST = 'app_db_1'
-PORT = 5432
+DB_DATABASE = 'postgres'
+DB_HOST = 'app_db_1'
+DB_PORT = 5432
+
 PER_PAGE = 30
 DEBUG = True
+
 SECRET_KEY = 'development key'
+
+VAULT_HOST = 'http://178.33.83.162'
+VAULT_PORT = 8200
+VAULT_CRED_URL = 'postgresql/creds/rw'
 
 # create our little application :)
 app = Flask(__name__)
@@ -39,23 +45,48 @@ PW_HASH = 'pw_hash'
 ID = 'user_id'
 
 
-def get_db():
-    """Opens a new database connection if there is none yet for the
-    current application context.
-    """
+def set_up_vault_client(token: str) -> hvac.Client:
+    client = hvac.Client(url='{}:{}'.format(VAULT_HOST, VAULT_PORT))
+    client.token = token
+    if not client.is_authenticated():
+        raise BadRequest(description="Could not set up the vault, maybe the token is invalid ?")
+    return client
+
+
+def get_creds_from_vault() -> (str, str):
     top = _app_ctx_stack.top
-    while not hasattr(top, 'postgre_db'):
+    if not hasattr(top, 'vault_client'):
+        raise BadRequest(description="The server has not been initialized yet")
+    raw_creds = top.vault_client.read(VAULT_CRED_URL)
+    return raw_creds['username'], raw_creds['password']
+
+
+def create_db_client() -> psycopg2.extensions.connection:
+    db_client = None
+    username, password = get_creds_from_vault()
+    while not db_client:
         try:
-            top.postgre_db = psycopg2.connect(host=app.config['HOST'], database=app.config['DATABASE'],
-                                              user=app.config['USER'], password=app.config['PASSWORD'],
-                                              port=app.config['PORT'])
-            initdb_command()
-        except Exception as e:
+            db_client = psycopg2.connect(host=app.config['HOST'], database=app.config['DATABASE'],
+                                         user=username, password=password, port=app.config['PORT'])
+        except psycopg2.OperationalError as e:
             app.logger.error('Could not connect to the db {} on host {}:{} : {}'.format(app.config['DATABASE'],
                                                                                         app.config['HOST'],
                                                                                         app.config['PORT'],
                                                                                         str(e)))
             time.sleep(1)
+    return db_client
+
+
+def get_db():
+    """Opens a new database connection if there is none yet for the
+    current application context.
+    """
+    top = _app_ctx_stack.top
+    if not hasattr(top, 'postgre_db'):
+        top.postgre_db = create_db_client()
+    elif top.postgre_db.closed:
+        top.postgre_db.close()
+        top.postgre_db = create_db_client()
     return top.postgre_db
 
 
@@ -117,6 +148,18 @@ def before_request():
     if 'user_id' in session:
         g.user = query_db('SELECT * FROM twituser WHERE user_id = (%s)',
                           [session['user_id']], one=True)
+
+
+@app.route('/init', methods=['POST'])
+def init():
+    """
+    Initialize everything, once vault is good. The token is sent through here
+    """
+    json = request.get_json(force=True)
+    if not json or not json['token']:
+        app.logger.error('No token was provided for initialization')
+    _app_ctx_stack.top.vault_client = set_up_vault_client(json['token'])
+    initdb_command()
 
 
 @app.route('/')
