@@ -14,9 +14,4 @@ services:
     image: jfrog-docker-reg2.bintray.io/jfrog/artifactory-registry:latest
     ports:
       - "8081:8081"
-  vault:
-    build: ./vault
-    command: server -config=/config/dev.hcl
-    ports:
-      - "8200:8200"
 

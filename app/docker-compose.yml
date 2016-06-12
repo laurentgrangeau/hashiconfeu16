@@ -6,16 +6,21 @@ services:
       - "5000:5000"
     depends_on:
       - db
+      - vault
   db:
     image: postgres
     environment:
       - POSTGRES_PASSWORD=toto
     command: postgres
-    ports:
-      - "5432:5432"
   vault_init:
     build: ./vault_initializer
     env_file: ./vault_initializer/dev.env
     depends_on:
       - db
       - minitwit
+      - vault
+  vault:
+    build: ./vault
+    command: server -config=/config/dev.hcl
+    ports:
+      - "8200:8200"
