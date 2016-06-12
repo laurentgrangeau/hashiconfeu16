@@ -39,14 +39,11 @@ path "postgresql/creds/*" {
 }
 """
 
-# Hard coded IPs are uncool. It should point to the vault basically.
 vault_host = "app_vault_1"
 vault_port = 8200
 vault_url = "http://{}:{}".format(vault_host, vault_port)
 
 shares, threshold = 1, 1
-
-consul_url = "http://178.33.83.163:8500"
 
 
 #########
@@ -66,8 +63,6 @@ def init_postgre_backend(client: hvac.Client):
         except hvac.exceptions.InvalidRequest as e:
             logging.error(e)
             time.sleep(1)
-#    logging.info('Setting lease to {} and max {}'.format(lease, max_lease))
-#    client.write("postgresql/config/lease", lease=lease, max_lease=max_lease)
     logging.info('Creating role readwrite')
     client.write('/postgresql/roles/readwrite', sql=rw_role_request)
     logging.info("Ok we're good. You can now request rw on the url postgresql/creds/readwrite")
@@ -98,8 +93,6 @@ def send_access_token(client: hvac.Client) -> bool:
 
 
 def reset_vault(client: hvac.Client) -> (str, List[str]):
-    # Delete previous vault if it exists
-    # requests.delete("{}/v1/kv/vault?recurse".format(consul_url))
     assert not client.is_initialized()
     logging.warning("The vault is not initialized yet, it will be initialized with {} keys and a threshold  of {}. "
                     "Security is overrated anyway.".format(shares, threshold))
