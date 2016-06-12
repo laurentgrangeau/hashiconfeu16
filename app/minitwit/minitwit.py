@@ -8,7 +8,7 @@
     :copyright: (c) 2015 by Armin Ronacher.
     :license: BSD, see LICENSE for more details.
 """
-
+import json
 import time
 import psycopg2
 import psycopg2.extensions
@@ -30,14 +30,17 @@ DEBUG = True
 
 SECRET_KEY = 'development key'
 
-VAULT_HOST = 'http://178.33.83.162'
+VAULT_HOST = 'http://app_vault_1'
 VAULT_PORT = 8200
-VAULT_CRED_URL = 'postgresql/creds/rw'
+VAULT_CRED_URL = 'postgresql/creds/readwrite'
 
 # create our little application :)
 app = Flask(__name__)
 app.config.from_object(__name__)
 app.config.from_envvar('MINITWIT_SETTINGS', silent=True)
+
+vault_client = None
+postgre_db = None
 
 USERNAME = 'username'
 EMAIL = 'email'
@@ -54,11 +57,11 @@ def set_up_vault_client(token: str) -> hvac.Client:
 
 
 def get_creds_from_vault() -> (str, str):
-    top = _app_ctx_stack.top
-    if not hasattr(top, 'vault_client'):
+    global vault_client
+    if not vault_client:
         raise BadRequest(description="The server has not been initialized yet")
-    raw_creds = top.vault_client.read(VAULT_CRED_URL)
-    return raw_creds['username'], raw_creds['password']
+    raw_creds = vault_client.read(VAULT_CRED_URL)
+    return raw_creds['data']['username'], raw_creds['data']['password']
 
 
 def create_db_client() -> psycopg2.extensions.connection:
@@ -66,12 +69,12 @@ def create_db_client() -> psycopg2.extensions.connection:
     username, password = get_creds_from_vault()
     while not db_client:
         try:
-            db_client = psycopg2.connect(host=app.config['HOST'], database=app.config['DATABASE'],
-                                         user=username, password=password, port=app.config['PORT'])
+            db_client = psycopg2.connect(host=app.config['DB_HOST'], database=app.config['DB_DATABASE'],
+                                         user=username, password=password, port=app.config['DB_PORT'])
         except psycopg2.OperationalError as e:
-            app.logger.error('Could not connect to the db {} on host {}:{} : {}'.format(app.config['DATABASE'],
-                                                                                        app.config['HOST'],
-                                                                                        app.config['PORT'],
+            app.logger.error('Could not connect to the db {} on host {}:{} : {}'.format(app.config['DB_DATABASE'],
+                                                                                        app.config['DB_HOST'],
+                                                                                        app.config['DB_PORT'],
                                                                                         str(e)))
             time.sleep(1)
     return db_client
@@ -81,21 +84,13 @@ def get_db():
     """Opens a new database connection if there is none yet for the
     current application context.
     """
-    top = _app_ctx_stack.top
-    if not hasattr(top, 'postgre_db'):
-        top.postgre_db = create_db_client()
-    elif top.postgre_db.closed:
-        top.postgre_db.close()
-        top.postgre_db = create_db_client()
-    return top.postgre_db
-
-
-@app.teardown_appcontext
-def close_database(exception):
-    """Closes the database again at the end of the request."""
-    top = _app_ctx_stack.top
-    if hasattr(top, 'postgre_db'):
-        top.postgre_db.close()
+    global postgre_db
+    if not postgre_db:
+        postgre_db = create_db_client()
+    elif postgre_db.closed:
+        postgre_db.close()
+        postgre_db = create_db_client()
+    return postgre_db
 
 
 def init_db():
@@ -155,11 +150,15 @@ def init():
     """
     Initialize everything, once vault is good. The token is sent through here
     """
-    json = request.get_json(force=True)
-    if not json or not json['token']:
+    global vault_client
+    if vault_client:
+        return json.dumps({'success': False}), 200, {'ContentType': 'application/json'}
+    json_payload = request.get_json(force=True)
+    if not json_payload or not json_payload['token']:
         app.logger.error('No token was provided for initialization')
-    _app_ctx_stack.top.vault_client = set_up_vault_client(json['token'])
+    vault_client = set_up_vault_client(json_payload['token'])
     initdb_command()
+    return json.dumps({'success': True}), 200, {'ContentType': 'application/json'}
 
 
 @app.route('/')

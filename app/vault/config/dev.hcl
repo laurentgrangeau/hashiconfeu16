@@ -1,6 +1,4 @@
-backend "consul" {
-  address = "178.33.83.163:8500"
-  path = "vault"
+backend "inmem" {
 }
 
 listener "tcp" {

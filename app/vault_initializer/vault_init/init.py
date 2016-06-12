@@ -16,10 +16,13 @@ postgre_pwd = os.environ.get('POSTGRE_PWD')
 postgre_db_host = 'app_db_1'
 postgre_db_port = '5432'
 postgre_database = 'postgres'
+postgre_url = "postgresql://{}:{}@{}:{}/{}?sslmode=disable".format(postgre_user, postgre_pwd, postgre_db_host,
+                                                                   postgre_db_port, postgre_database)
 
 minitwit_host = 'app_minitwit_1'
 minitwit_port = '5000'
 minitwit_init_url = 'init'
+minitwit_url = 'http://{}:{}/{}'.format(minitwit_host, minitwit_port, minitwit_init_url)
 
 lease = '1h'
 max_lease = '24h'
@@ -29,10 +32,10 @@ CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expir
     GRANT ALL ON ALL TABLES IN SCHEMA public TO \"{{name}}\";
 """
 
-postgres_read_policy_name = 'postgres_read_policy'
-postgres_read_policy = """
-path "postgresql" {
-  policy = "read"
+postgres_policy_name = 'postgres_read_policy'
+postgres_policy = """
+path "postgresql/creds/*" {
+  policy = "write"
 }
 """
 
@@ -53,22 +56,21 @@ def init_postgre_backend(client: hvac.Client):
         logging.warning('Backend postgresql already exists : it will be modified')
     else:
         client.enable_secret_backend('postgresql')
-    connection_url = "postgresql://{}:{}@{}:{}/{}?sslmode=disable".format(postgre_user, postgre_pwd, postgre_db_host,
-                                                                          postgre_db_port, postgre_database)
-    logging.warning('Setting up the postgre backend with the url {}'.format(connection_url))
     ok = False
+    logging.info('Setting up the postgre backend with the url {}'.format(postgre_url))
     while not ok:
         try:
-            client.write("postgresql/config/connection", connection_url=connection_url)
+            # We try a lot because postgre/vault might not be completely up by the time it is launched
+            client.write('/postgresql/config/connection', connection_url=postgre_url)
             ok = True
-        except Exception as e:
+        except hvac.exceptions.InvalidRequest as e:
             logging.error(e)
             time.sleep(1)
-    logging.info('Setting lease to {} and max {}'.format(lease, max_lease))
-    client.write("postgresql/config/lease", lease=lease, max_lease=max_lease)
-    logging.info('Creating role rw')
-    client.write("postgresql/roles/rw", sql=rw_role_request)
-    logging.info("Ok we're good. You can now request rw on the url postgresql/creds/rw")
+#    logging.info('Setting lease to {} and max {}'.format(lease, max_lease))
+#    client.write("postgresql/config/lease", lease=lease, max_lease=max_lease)
+    logging.info('Creating role readwrite')
+    client.write('/postgresql/roles/readwrite', sql=rw_role_request)
+    logging.info("Ok we're good. You can now request rw on the url postgresql/creds/readwrite")
 
 
 def pre_flight_check(client: hvac.Client) -> bool:
@@ -84,22 +86,20 @@ def pre_flight_check(client: hvac.Client) -> bool:
 
 
 def set_up_policies(client: hvac.Client):
-    if postgres_read_policy_name in client.list_policies():
-        logging.info("Policy {} already set up".format(postgres_read_policy_name))
+    if postgres_policy_name in client.list_policies():
+        logging.info("Policy {} already set up".format(postgres_policy_name))
         return
-    client.set_policy(postgres_read_policy_name, postgres_read_policy)
+    client.set_policy(postgres_policy_name, postgres_policy)
 
 
 def send_access_token(client: hvac.Client) -> bool:
-    minitwit_url = '{}:{}/{}'.format(minitwit_host, minitwit_port, minitwit_init_url)
-    token = client.create_token(policies=[postgres_read_policy_name])
-    requests.post(minitwit_url, json={'token': token})
+    token = client.create_token(policies=[postgres_policy_name])
+    requests.post(minitwit_url, json={'token': token['auth']['client_token']})
 
 
-def reset_vault() -> (str, List[str]):
+def reset_vault(client: hvac.Client) -> (str, List[str]):
     # Delete previous vault if it exists
-    #requests.delete("{}/v1/kv/vault?recurse".format(consul_url))
-    client = hvac.Client(url=vault_url)
+    # requests.delete("{}/v1/kv/vault?recurse".format(consul_url))
     assert not client.is_initialized()
     logging.warning("The vault is not initialized yet, it will be initialized with {} keys and a threshold  of {}. "
                     "Security is overrated anyway.".format(shares, threshold))
@@ -115,11 +115,9 @@ def reset_vault() -> (str, List[str]):
     return root_token, unseal_keys
 
 
-## Might be cool to add a bootstrapper : create a role that can grand permissions, and use that role instead.
-
 def main():
-    root_token, _ = reset_vault()
     client = hvac.Client(url=vault_url)
+    root_token, _ = reset_vault(client)
     client.token = root_token
     if not pre_flight_check(client):
         exit(1)
