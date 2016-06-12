@@ -13,3 +13,9 @@ services:
     command: postgres
     ports:
       - "5432:5432"
+  vault_init:
+    build: ./vault_initializer
+    env_file: ./vault_initializer/dev.env
+    depends_on:
+      - db
+      - minitwit
