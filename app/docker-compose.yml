@@ -13,6 +13,7 @@ services:
     image: postgres
     environment:
       - POSTGRES_PASSWORD=toto
+      - "constraint:environment==backend"
     command: postgres
     environment:
       - "constraint:environment==backend"
