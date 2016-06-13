@@ -14,6 +14,8 @@ services:
     environment:
       - POSTGRES_PASSWORD=toto
     command: postgres
+    environment:
+      - "constraint:environment==backend"
   vault_init:
     build: ./vault_initializer
     env_file: ./vault_initializer/dev.env
@@ -21,6 +23,10 @@ services:
       - db
       - minitwit
       - vault
+    environment:
+      - "constraint:environment==backend"
   vault:
     build: ./vault
     command: server -config=/config/dev.hcl
+    environment:
+      - "constraint:environment==backend"
