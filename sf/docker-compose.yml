@@ -10,8 +10,3 @@ services:
     build: ./jenkins
     ports:
       - "8080:8080"
-  artifactory:
-    image: jfrog-docker-reg2.bintray.io/jfrog/artifactory-registry:latest
-    ports:
-      - "8081:8081"
-
